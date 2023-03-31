@@ -22,7 +22,6 @@ import (
 	"go.uber.org/zap"
 
 	"go.opentelemetry.io/collector/config/configtelemetry"
-	"go.opentelemetry.io/collector/exporter/loggingexporter/internal/otlptext"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
@@ -80,11 +79,8 @@ func (s *loggingExporter) pushLogs(_ context.Context, ld plog.Logs) error {
 
 func newLoggingExporter(logger *zap.Logger, verbosity configtelemetry.Level) *loggingExporter {
 	return &loggingExporter{
-		verbosity:        verbosity,
-		logger:           logger,
-		logsMarshaler:    otlptext.NewTextLogsMarshaler(),
-		metricsMarshaler: otlptext.NewTextMetricsMarshaler(),
-		tracesMarshaler:  otlptext.NewTextTracesMarshaler(),
+		verbosity: verbosity,
+		logger:    logger,
 	}
 }
 

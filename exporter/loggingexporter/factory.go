@@ -27,6 +27,10 @@ import (
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/exporter"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
+	"go.opentelemetry.io/collector/exporter/loggingexporter/internal/otlptext"
+	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
 const (
@@ -38,14 +42,52 @@ const (
 
 var onceWarnLogLevel sync.Once
 
+// FactoryOption applies changes to loggingExporterFactory.
+type FactoryOption func(factory *loggingExporterFactory)
+
+// WithTracesMarshaler adds tracesMarshaler.
+func WithTracesMarshaler(marshaler ptrace.Marshaler) FactoryOption {
+	return func(factory *loggingExporterFactory) {
+		factory.tracesMarshaler = marshaler
+	}
+}
+
+// WithMetricsMarshaler adds additional metric marshalers to the exporter factory.
+func WithMetricsMarshaler(marshaler pmetric.Marshaler) FactoryOption {
+	return func(factory *loggingExporterFactory) {
+		factory.metricsMarshaler = marshaler
+	}
+}
+
+// WithLogMarshaler adds additional log marshalers to the exporter factory.
+func WithLogsMarshaler(marshaler plog.Marshaler) FactoryOption {
+	return func(factory *loggingExporterFactory) {
+		factory.logsMarshaler = marshaler
+	}
+}
+
+type loggingExporterFactory struct {
+	logsMarshaler    plog.Marshaler
+	metricsMarshaler pmetric.Marshaler
+	tracesMarshaler  ptrace.Marshaler
+}
+
 // NewFactory creates a factory for Logging exporter
-func NewFactory() exporter.Factory {
+func NewFactory(options ...FactoryOption) exporter.Factory {
+	f := &loggingExporterFactory{
+		logsMarshaler:    otlptext.NewTextLogsMarshaler(),
+		metricsMarshaler: otlptext.NewTextMetricsMarshaler(),
+		tracesMarshaler:  otlptext.NewTextTracesMarshaler(),
+	}
+	for _, o := range options {
+		o(f)
+	}
 	return exporter.NewFactory(
 		typeStr,
 		createDefaultConfig,
-		exporter.WithTraces(createTracesExporter, component.StabilityLevelDevelopment),
-		exporter.WithMetrics(createMetricsExporter, component.StabilityLevelDevelopment),
-		exporter.WithLogs(createLogsExporter, component.StabilityLevelDevelopment),
+		exporter.WithTraces(f.createTracesExporter, component.StabilityLevelDevelopment),
+		exporter.WithMetrics(f.createMetricsExporter, component.StabilityLevelDevelopment),
+		exporter.WithLogs(f.createLogsExporter, component.StabilityLevelDevelopment),
 	)
 }
 
@@ -58,10 +100,13 @@ func createDefaultConfig() component.Config {
 	}
 }
 
-func createTracesExporter(ctx context.Context, set exporter.CreateSettings, config component.Config) (exporter.Traces, error) {
+func (f *loggingExporterFactory) createTracesExporter(ctx context.Context, set exporter.CreateSettings, config component.Config) (exporter.Traces, error) {
 	cfg := config.(*Config)
 	exporterLogger := createLogger(cfg, set.TelemetrySettings.Logger)
 	s := newLoggingExporter(exporterLogger, cfg.Verbosity)
+	s.logsMarshaler = f.logsMarshaler
+	s.metricsMarshaler = f.metricsMarshaler
+	s.tracesMarshaler = f.tracesMarshaler
 	return exporterhelper.NewTracesExporter(ctx, set, cfg,
 		s.pushTraces,
 		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
@@ -73,10 +118,13 @@ func createTracesExporter(ctx context.Context, set exporter.CreateSettings, conf
 	)
 }
 
-func createMetricsExporter(ctx context.Context, set exporter.CreateSettings, config component.Config) (exporter.Metrics, error) {
+func (f *loggingExporterFactory) createMetricsExporter(ctx context.Context, set exporter.CreateSettings, config component.Config) (exporter.Metrics, error) {
 	cfg := config.(*Config)
 	exporterLogger := createLogger(cfg, set.TelemetrySettings.Logger)
 	s := newLoggingExporter(exporterLogger, cfg.Verbosity)
+	s.logsMarshaler = f.logsMarshaler
+	s.metricsMarshaler = f.metricsMarshaler
+	s.tracesMarshaler = f.tracesMarshaler
 	return exporterhelper.NewMetricsExporter(ctx, set, cfg,
 		s.pushMetrics,
 		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
@@ -88,10 +136,13 @@ func createMetricsExporter(ctx context.Context, set exporter.CreateSettings, con
 	)
 }
 
-func createLogsExporter(ctx context.Context, set exporter.CreateSettings, config component.Config) (exporter.Logs, error) {
+func (f *loggingExporterFactory) createLogsExporter(ctx context.Context, set exporter.CreateSettings, config component.Config) (exporter.Logs, error) {
 	cfg := config.(*Config)
 	exporterLogger := createLogger(cfg, set.TelemetrySettings.Logger)
 	s := newLoggingExporter(exporterLogger, cfg.Verbosity)
+	s.logsMarshaler = f.logsMarshaler
+	s.metricsMarshaler = f.metricsMarshaler
+	s.tracesMarshaler = f.tracesMarshaler
 	return exporterhelper.NewLogsExporter(ctx, set, cfg,
 		s.pushLogs,
 		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
